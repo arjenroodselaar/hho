@@ -13,13 +13,8 @@ const hellogo string = `
 package main
 
 func main() {
-	b := 5
-	c := 4
-	print("Testing", b, ">=", c)
-	if (b >= c) {
-		println("yep")
-	} else {
-		println("nope")
+	for i := 0; i < 3; i++ {
+		println(i)
 	}
 }
 `
@@ -98,6 +93,10 @@ func (a *Assembler) emit(fstring string, args ...interface{}) (string) {
 	ind := strings.Repeat("    ", a.indent)
 	str := fmt.Sprintf(fstring, args...)
 	return fmt.Sprintf("%s%s\n", ind, str)
+}
+
+func (a *Assembler) emitLabel(l string) {
+	a.hhas += a.emit("%s:", l)
 }
 
 func (a *Assembler) Print() {
@@ -193,6 +192,32 @@ func (a *Assembler) EmitFile(n *ast.File) {
 	a.skip_next_ident = true
 }
 
+func (a *Assembler) EmitForStmt(n *ast.ForStmt) {
+	a.ParseNode(n.Init)
+	label := a.getNextLabel()
+	a.emitLabel(label + "_for")
+	a.indent++
+
+	a.ParseNode(n.Cond)
+	a.hhas += a.emit("JmpZ %s", label+"_end")
+
+	a.indent--
+	a.emitLabel(label + "_loop")
+	a.indent++
+
+	a.ParseNode(n.Body)
+
+	a.indent--
+	a.emitLabel(label + "_post")
+	a.indent++
+
+	a.ParseNode(n.Post)
+	a.hhas += a.emit("Jmp %s", label+"_for")
+
+	a.indent--
+	a.emitLabel(label + "_end")
+}
+
 func (a *Assembler) EmitFuncBody(n *ast.BlockStmt) {
 	for _, x := range n.List {
 		a.ParseNode(x)
@@ -226,19 +251,31 @@ func (a *Assembler) EmitIfStmt(n *ast.IfStmt) {
 	elseLabel := label + "_else"
 	endLabel := label + "_end"
 
-	emitLabel := func(l string) { a.hhas += a.emit("%s:", l) }
-
 	a.hhas += a.emit("JmpNZ %s", elseLabel)
-	emitLabel(label)
+	a.emitLabel(label)
 	a.indent++
 	a.ParseNode(n.Body)
 	a.hhas += a.emit("Jmp %s", endLabel)
 	a.indent--
-	emitLabel(elseLabel)
+	a.emitLabel(elseLabel)
 	a.indent++
 	a.ParseNode(n.Else)
 	a.indent--
-	emitLabel(endLabel)
+	a.emitLabel(endLabel)
+}
+
+func (a *Assembler) EmitIncDecStmt(n *ast.IncDecStmt) {
+	op := ""
+	switch n.Tok {
+	case token.INC:
+		op = "PostInc"
+	case token.DEC:
+		op = "PostDec"
+	default:
+		panic(fmt.Sprintf("Whoa shit, unrecognized IncDec %d", n.Tok))
+	}
+
+	a.hhas += a.emit("IncDecL $%s %s", n.X.(*ast.Ident).Name, op)
 }
 
 func (a *Assembler) EmitParenExpr(n *ast.ParenExpr) {
@@ -307,6 +344,8 @@ func (a *Assembler) ParseNode(n ast.Node) bool {
 		a.ParseNode(v.X)
 	case *ast.File:
 		a.EmitFile(v)
+	case *ast.ForStmt:
+		a.EmitForStmt(v)
 	case *ast.FuncDecl:
 		a.EmitFuncDecl(v)
 		return false
@@ -318,6 +357,8 @@ func (a *Assembler) ParseNode(n ast.Node) bool {
 		}
 	case *ast.IfStmt:
 		a.EmitIfStmt(v)
+	case *ast.IncDecStmt:
+		a.EmitIncDecStmt(v)
 	case *ast.ParenExpr:
 		a.EmitParenExpr(v)
 	case *ast.ReturnStmt:
@@ -333,12 +374,13 @@ func (a *Assembler) ParseNode(n ast.Node) bool {
 func main() {
 	f := token.NewFileSet()
 	t, err := parser.ParseFile(f, "hello.go", hellogo, 0)
+
 	if (err != nil) {
-		print(err)
+		panic(err)
 	}
 
 	a := NewAssembler()
 	ast.Inspect(t, a.ParseNode)
-	//ast.Print(f, t)
+	ast.Print(f, t)
 	a.Print()
 }
