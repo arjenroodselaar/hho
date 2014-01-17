@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"bytecode"
 )
 
 const hellogo string = `
@@ -18,58 +19,6 @@ func main() {
 	}
 }
 `
-
-func getOpFromKind(t token.Token) string {
-	s := ""
-	switch t {
-	case token.STRING:
-		s = "String"
-	case token.CHAR:
-		s = "String"
-	case token.INT:
-		s = "Int"
-	case token.FLOAT:
-		s = "Double"
-	case token.ADD:
-		s = "Add"
-	case token.SUB:
-		s = "Sub"
-	case token.MUL:
-		s = "Mul"
-	case token.QUO:
-		s = "Div"
-	case token.REM:
-		s = "Mod"
-	case token.AND:     // &
-		s = "BitAnd"
-	case token.OR:        // |
-		s = "BitOr"
-	case token.XOR:     // ^
-		s = "BitXor"
-	case token.SHL:     // <<
-		s = "Shl"
-	case token.SHR:     // >>
-		s = "Shr"
-	case token.EQL:    // ==
-		s = "Eq"
-	case token.LSS:    // <
-		s = "Lt"
-	case token.GTR:    // >
-		s = "Gt"
-	case token.NOT:   // !
-		s = "Not"
-	case token.NEQ:      // !=
-		s = "Neq"
-	case token.LEQ:      // <=
-		s = "Lte"
-	case token.GEQ:      // >=
-		s = "Gte"
-	default:
-		panic("Token not supported")
-
-	}
-	return s
-}
 
 type Assembler struct {
 	hhas            string
@@ -125,13 +74,13 @@ func (a *Assembler) EmitAssignStmt(n *ast.AssignStmt) {
 }
 
 func (a *Assembler) EmitBasicLit(n *ast.BasicLit) {
-	a.hhas += a.emit(getOpFromKind(n.Kind)+" %s", n.Value)
+	a.hhas += a.emit(bytecode.LookupOpFromKind(n.Kind)+" %s", n.Value)
 }
 
 func (a *Assembler) EmitBinaryExpr(n *ast.BinaryExpr) {
 	a.ParseNode(n.Y)
 	a.ParseNode(n.X)
-	a.hhas += a.emit(getOpFromKind(n.Op))
+	a.hhas += a.emit(bytecode.LookupOpFromKind(n.Op))
 
 }
 
@@ -295,12 +244,12 @@ func (a *Assembler) EmitReturnStmt(n *ast.ReturnStmt) {
 			x := v.X.(*ast.BasicLit)
 			y := v.Y.(*ast.BasicLit)
 			s := ""
-			s += a.emit(getOpFromKind(x.Kind)+"%s", x.Value)
-			s += a.emit(getOpFromKind(y.Kind)+"%s", y.Value)
-			s += a.emit(getOpFromKind(v.Op))
+			s += a.emit(bytecode.LookupOpFromKind(x.Kind)+"%s", x.Value)
+			s += a.emit(bytecode.LookupOpFromKind(y.Kind)+"%s", y.Value)
+			s += a.emit(bytecode.LookupOpFromKind(v.Op))
 			return s
 		case *ast.BasicLit:
-			return a.emit(getOpFromKind(v.Kind)+"%s", v.Value)
+			return a.emit(bytecode.LookupOpFromKind(v.Kind)+"%s", v.Value)
 		case *ast.Ident:
 			return a.emit("CGetL $%s", v.Name)
 		default:
