@@ -9,7 +9,7 @@ import (
 	"hho"
 )
 func main() {
-	name := "/Users/arjen/dev/hho/examples/hello_world.go"
+	name := "/Users/arjen/dev/hho/examples/calc.go"
 	imp := importer.New(&importer.Config{})
 
 	// Parse the input file.

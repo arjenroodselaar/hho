@@ -3,9 +3,9 @@ package hho
 import (
 	"fmt"
 	"reflect"
+	"strings"
 	"go/token"
 	"code.google.com/p/go.tools/ssa"
-	"strings"
 	"code.google.com/p/go.tools/go/types"
 )
 
@@ -22,6 +22,21 @@ func EmitUnOp(o *ssa.UnOp) {
 	}
 }
 
+func EmitBinOp(o *ssa.BinOp) {
+	// Load the parameters and push them onto the stack.
+	EmitValue(o.X)
+	EmitValue(o.Y)
+
+	switch o.Op {
+	case token.MUL:
+		fmt.Printf("\tMul\n")
+	case token.QUO:
+		fmt.Printf("\tDiv\n")
+	default:
+		fmt.Println("Unknown BinOp:", o.Op)
+	}
+}
+
 func EmitJump(j *ssa.Jump) {
 	fmt.Printf("\tJmp %s\n", j.Block().Succs[0])
 }
@@ -34,6 +49,14 @@ func EmitReturn(r *ssa.Return) {
 	fmt.Printf("\tRetC\n")
 }
 
+func EmitFunctionCall(f *ssa.Function) {
+	fmt.Printf("\tFPushFuncD %d \"%s\"\n", len(f.Params), f.String())
+	for i := 0; i < len(f.Params); i++ {
+		fmt.Printf("\tFPass %d\n", i)
+	}
+	fmt.Printf("\tFCall %d\n", len(f.Params))
+}
+
 func EmitValue(v ssa.Value) {
 	switch t := v.(type) {
 	case *ssa.Const:
@@ -42,6 +65,12 @@ func EmitValue(v ssa.Value) {
 			switch c.Kind() {
 			case types.String:
 				fmt.Printf("\tString %s\n", t.Value)
+			case types.Int:	fallthrough
+			case types.Int8: fallthrough
+			case types.Int16: fallthrough
+			case types.Int32: fallthrough
+			case types.Int64:
+				fmt.Printf("\tInt %s\n", t.Value)
 			default:
 				fmt.Println("Unknown Basic type:", c.Kind())
 			}
@@ -51,27 +80,47 @@ func EmitValue(v ssa.Value) {
 	case *ssa.Builtin:
 		switch t.Object().Name() {
 		case "print":
-			fmt.Printf("\tPrint\n")
 			// Pop the 1 pushed on by print.
-			fmt.Printf("\tPopC\n")
+			//fmt.Printf("\tPrint\n\tPopC\n")
+			fmt.Printf("\tPrint\n")
+		case "println":
+			//fmt.Printf("\tPrint\n\tPopC\n\tString \"\\n\"\n\tPrint\n\tPopC\n")
+			fmt.Printf("\tPrint\n\tPopC\n\tString \"\\n\"\n\tPrint\n")
 		default:
 			fmt.Printf("Unknown Builtin: %v\n", t.Object().Name())
 		}
+	case *ssa.Parameter:
+		fmt.Printf("\tCGetL $%s\n", t.Name())
+	case *ssa.Call:
+		fmt.Printf("\tCGetL $%s\n", t.Name())
+	case *ssa.Function:
+		EmitFunctionCall(t)
 	default:
-		fmt.Println("Unknown Value type:", reflect.TypeOf(t))
+		//fmt.Printf("%#v\n", t)
+		fmt.Printf("Unknown Value type: %s\n", reflect.TypeOf(t))
 	}
 }
 
-func EmitCall(i *ssa.Call) {
-	for _, value := range(i.Common().Args) {
-		EmitValue(value)
+func EmitCall(c *ssa.Call) {
+	switch f := c.Common().Value.(type) {
+	case *ssa.Function:
+		fmt.Printf("\tFPushFuncD %d \"%s\"\n", len(f.Params), f.String())
+		for i, arg := range(c.Common().Args) {
+			EmitValue(arg)
+			fmt.Printf("\tFPassC %d\n", i)
+		}
+		fmt.Printf("\tFCall %d\n", len(c.Common().Args))
+		fmt.Printf("\tUnboxR\n")
+	case *ssa.Builtin:
+		for _, arg := range(c.Common().Args) {
+			EmitValue(arg)
+		}
+		EmitValue(f)
+	default:
+		fmt.Printf("Unknown Call type: %s\n", reflect.TypeOf(f))
 	}
-	if !i.Common().IsInvoke() {
-		EmitValue(i.Common().Value)
-	} else {
-		fmt.Println("Unknown Call type: invoke")
-	}
-
+	fmt.Printf("\tSetL $%s\n", c.Name())
+	fmt.Printf("\tPopC\n")
 }
 
 func EmitInstruction(i ssa.Instruction) {
@@ -80,6 +129,8 @@ func EmitInstruction(i ssa.Instruction) {
 		EmitIf(t)
 	case *ssa.UnOp:
 		EmitUnOp(t)
+	case *ssa.BinOp:
+		EmitBinOp(t)
 	case *ssa.Store:
 		// Ignore
 	case *ssa.Jump:
