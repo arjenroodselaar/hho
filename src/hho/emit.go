@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"go/token"
 	"code.google.com/p/go.tools/ssa"
+	"strings"
 	"code.google.com/p/go.tools/go/types"
 )
 
@@ -34,25 +35,43 @@ func EmitReturn(r *ssa.Return) {
 }
 
 func EmitValue(v ssa.Value) {
-	switch t := v.Type().(type) {
-	case *types.Basic:
-		switch t.Kind() {
-		case types.String:
-			fmt.Printf("\tString %s\n", "bla")
+	switch t := v.(type) {
+	case *ssa.Const:
+		switch c := t.Type().(type) {
+		case *types.Basic:
+			switch c.Kind() {
+			case types.String:
+				fmt.Printf("\tString %s\n", t.Value)
+			default:
+				fmt.Println("Unknown Basic type:", c.Kind())
+			}
+		default:
+			fmt.Println("Unknown Const type:", t.Type())
 		}
-	//case *types.Tuple:
-	//	fmt.Println("tuple len", v.(*types.Tuple).Len())
+	case *ssa.Builtin:
+		switch t.Object().Name() {
+		case "print":
+			fmt.Printf("\tPrint\n")
+			// Pop the 1 pushed on by print.
+			fmt.Printf("\tPopC\n")
+		default:
+			fmt.Printf("Unknown Builtin: %v\n", t.Object().Name())
+		}
 	default:
 		fmt.Println("Unknown Value type:", reflect.TypeOf(t))
 	}
 }
 
 func EmitCall(i *ssa.Call) {
-	for _, value := range(i.Call.Args) {
+	for _, value := range(i.Common().Args) {
 		EmitValue(value)
 	}
-	fmt.Println(i.Common().Description())
-	EmitValue(i.Common().Value)
+	if !i.Common().IsInvoke() {
+		EmitValue(i.Common().Value)
+	} else {
+		fmt.Println("Unknown Call type: invoke")
+	}
+
 }
 
 func EmitInstruction(i ssa.Instruction) {
@@ -82,10 +101,17 @@ func EmitBasicBlock(b *ssa.BasicBlock) {
 }
 
 func EmitFunction(f *ssa.Function) {
-	fmt.Printf(".function %s() {\n", f.String())
+	// Emit the function declaration.
+	args := make([]string, len(f.Params))
+	for i, param := range(f.Params) {
+		args[i] = fmt.Sprintf("$%s", param.Name())
+	}
+	fmt.Printf(".function %s(%s) {\n", f.String(), strings.Join(args, ", "))
+	// Emit the function blocks.
 	for _, b := range(f.Blocks) {
 		EmitBasicBlock(b)
 	}
+	// Close.
 	fmt.Printf("}\n\n")
 }
 
@@ -105,6 +131,14 @@ func EmitPackage(p *ssa.Package) {
 }
 
 func EmitProgram (p *ssa.Program) {
+	fmt.Println(".main {")
+	// Execute main.init()
+	fmt.Printf("\tFPushFuncD 0 \"main.init\"\n\tFCall 0\n\tPopR\n")
+	// Execute main.main()
+	fmt.Printf("\tFPushFuncD 0 \"main.main\"\n\tFCall 0\n\tPopR\n")
+	fmt.Printf("\tNull\n\tRetC\n")
+	fmt.Println("}\n")
+
 	for _, pkg := range(p.AllPackages()) {
 		EmitPackage(pkg)
 	}
