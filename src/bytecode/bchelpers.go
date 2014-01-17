@@ -704,7 +704,6 @@ func LookupStackDelta(bc string) int {
 	case "AsyncWrapException":
 		return 0
 	default:
-		panic("Invalid bytecode passed to LookupStackDelta")
 	}
 	return 0
 }

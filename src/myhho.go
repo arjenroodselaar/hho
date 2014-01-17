@@ -13,20 +13,29 @@ import (
 const hellogo string = `
 package main
 
+func test(y int) int {
+	x := 4 + y
+	return x
+}
+
 func main() {
 	for i := 0; i < 3; i++ {
-		println(i)
+		println(test(i))
 	}
 }
 `
 
 type Assembler struct {
 	hhas            string
+
 	cur_label,
-	indent          int
-	skip_next_ident,
+	indent,
+	stack_count    int
+
 	in_assign,
-	in_lhs            bool
+	in_lhs,
+	skip_next_ident,
+	trace_stack        bool
 }
 
 func NewAssembler() *Assembler {
@@ -34,14 +43,25 @@ func NewAssembler() *Assembler {
 	a.hhas = ""
 	a.indent = 0
 	a.cur_label = 0
+	a.stack_count = 0
 	a.skip_next_ident = false
+	a.trace_stack = true
 	return a
 }
 
 func (a *Assembler) emit(fstring string, args ...interface{}) (string) {
+	b := ""
+	if (a.trace_stack) {
+		op := strings.Fields(fstring)[0]
+		x := bytecode.LookupStackDelta(op)
+		if (x != 0) {
+			a.stack_count += x
+			b = fmt.Sprintf(" # %d, now %d", x, a.stack_count)
+		}
+	}
 	ind := strings.Repeat("    ", a.indent)
 	str := fmt.Sprintf(fstring, args...)
-	return fmt.Sprintf("%s%s\n", ind, str)
+	return ind + str + b + "\n"
 }
 
 func (a *Assembler) emitLabel(l string) {
@@ -57,7 +77,7 @@ func buildArgList(n *ast.FuncDecl) string {
 	args := make([]string, 0)
 	for _, x := range n.Type.Params.List {
 		for _, y := range x.Names {
-			args = append(args, y.Name)
+			args = append(args, "$"+y.Name)
 		}
 	}
 	s = strings.Join(args, ", ")
@@ -96,12 +116,13 @@ func (a *Assembler) EmitCallArgs(n []ast.Expr) {
 		case *ast.BasicLit:
 			a.hhas += a.emit("FPassC %d %s", i, v.Value)
 		case *ast.Ident:
-			a.hhas += a.emit("FPassL %d %s", i, v.Name)
+			a.hhas += a.emit("FPassL %d $%s", i, v.Name)
 		default:
 			fmt.Printf("Unrecognized type: %s\n", v)
 		}
 	}
 	a.hhas += a.emit("FCall %d", len(n))
+	a.hhas += a.emit("PopR")
 }
 
 func (a *Assembler) EmitCallExpr(n *ast.CallExpr) {
@@ -113,11 +134,13 @@ func (a *Assembler) EmitCallExpr(n *ast.CallExpr) {
 			a.hhas += a.emit("PopC")
 		}
 	}
+
 	if (fname == "print" || fname == "println") {
 		printargs(n.Args)
 		if (fname == "println") {
 			a.hhas += a.emit("String \"\\n\"")
 			a.hhas += a.emit("Print")
+			a.hhas += a.emit("PopC")
 		}
 	} else {
 		a.hhas += a.emit("FPushFuncD %d \"%s\"", len(n.Args), fname)
@@ -148,7 +171,7 @@ func (a *Assembler) EmitForStmt(n *ast.ForStmt) {
 	a.indent++
 
 	a.ParseNode(n.Cond)
-	a.hhas += a.emit("JmpZ %s", label+"_end")
+	a.hhas += a.emit("JmpNZ %s", label+"_end")
 
 	a.indent--
 	a.emitLabel(label + "_loop")
@@ -178,9 +201,12 @@ func (a *Assembler) EmitFuncDecl(n *ast.FuncDecl) {
 	a.hhas += a.emit(".function %s(%s) {", n.Name.Name, args)
 	a.indent++
 	a.EmitFuncBody(n.Body)
-	a.hhas += a.emit("RetC")
+	if (n.Type.Results == nil) {
+		a.hhas += a.emit("Null")
+		a.hhas += a.emit("RetC")
+	}
 	a.indent--
-	a.hhas += a.emit("}")
+	a.hhas += a.emit("}\n")
 }
 
 func (a *Assembler) EmitIdent(n *ast.Ident) {
@@ -225,6 +251,7 @@ func (a *Assembler) EmitIncDecStmt(n *ast.IncDecStmt) {
 	}
 
 	a.hhas += a.emit("IncDecL $%s %s", n.X.(*ast.Ident).Name, op)
+	a.hhas += a.emit("PopC")
 }
 
 func (a *Assembler) EmitParenExpr(n *ast.ParenExpr) {
@@ -278,6 +305,7 @@ func (a *Assembler) ParseNode(n ast.Node) bool {
 	if (n == nil) {
 		return false
 	}
+	fmt.Println(reflect.TypeOf(n))
 	switch v := n.(type) {
 	case *ast.AssignStmt:
 		a.EmitAssignStmt(v)
@@ -289,6 +317,7 @@ func (a *Assembler) ParseNode(n ast.Node) bool {
 		a.EmitBlockStmt(v)
 	case *ast.CallExpr:
 		a.EmitCallExpr(v)
+		return false
 	case *ast.ExprStmt:
 		a.ParseNode(v.X)
 	case *ast.File:
