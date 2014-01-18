@@ -1,0 +1,45 @@
+.main {
+    FPushFuncD 0 "main"
+    FCall 0
+    PopR # -1, now -1
+    Int 0 # 1, now 0
+    RetC # -1, now -1
+}
+
+.function test($y) {
+    CGetL $y # 1, now 0
+    Int 4 # 1, now 1
+    Add # -1, now 0
+    SetL $x
+    PopC # -1, now -1
+    CGetL $x # 1, now 0
+    RetC # -1, now -1
+}
+
+.function main() {
+    Int 0 # 1, now 0
+    SetL $i
+    PopC # -1, now -1
+    label_0_for:
+        Int 3 # 1, now 0
+        CGetL $i # 1, now 1
+        Lt # -1, now 0
+        JmpNZ label_0_end # -1, now -1
+    label_0_loop:
+        FPushFuncD 1 "test"
+        FPassL 0 $i # 1, now 0
+        FCall 1
+        Print
+        PopC # -1, now -1
+        String "\n" # 1, now 0
+        Print
+        PopC # -1, now -1
+    label_0_post:
+        IncDecL $i PostInc # 1, now 0
+        PopC # -1, now -1
+        Jmp label_0_for
+    label_0_end:
+    Null # 1, now 0
+    RetC # -1, now -1
+}
+

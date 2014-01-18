@@ -1,0 +1,19 @@
+AsyncESuspend <label id> <number of iterators>   [C:Obj]  ->  [C:Obj]
+
+  Suspends an eagerly executed async function into an AsyncFunctionWaitHandle
+  object.  The AsyncFunctionWaitHandle object will capture all defined local
+  variables and the first %2 iterators in the current eagerly executed async
+  function, and mark them uninitialized on the current frame.  The object will
+  store a reference to the associated resumable async function and a label %1
+  to be used to resume the execution once the WaitHandle object given by $1 is
+  finished.  If the $1 is not a WaitHandle, or is a WaitHandle that is already
+  finished, the behavior is undefined.
+
+AsyncWrapResult   [C]  ->  [C:Obj]
+
+  Wraps $1 into a StaticResultWaitHandle object.
+
+AsyncWrapException   [C:Obj]  ->  [C:Obj]
+
+  Wraps $1 into a StaticExceptionWaitHandle object.  If $1 is not an Exception,
+  the behavior is undefined.
