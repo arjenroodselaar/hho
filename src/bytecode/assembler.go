@@ -1,13 +1,23 @@
 package bytecode
 
 import (
-	"fmt"
+	"go/parser"
 	"go/ast"
 	"go/token"
-	"php"
+	"fmt"
 	"reflect"
 	"strings"
 )
+
+const hellogo string = `
+package main
+
+func main() {
+	z := "hi.txt"
+	x := file_get_contents(z)
+	print(file_get_contents(z))
+}
+`
 
 type Assembler struct {
 	hhas            string
@@ -19,6 +29,7 @@ type Assembler struct {
 	in_assign,
 	in_lhs,
 	skip_next_ident,
+	need_unbox,
 	trace_stack        bool
 }
 
@@ -28,15 +39,34 @@ func NewAssembler() *Assembler {
 	a.indent = 0
 	a.cur_label = 0
 	a.stack_count = 0
+	a.need_unbox = false
 	a.skip_next_ident = false
 	a.trace_stack = true
 	return a
 }
 
+func Assemble(code string) *Assembler {
+	f := token.NewFileSet()
+	t, err := parser.ParseFile(f, "passed_code.go", code, 0)
+
+	if (err != nil) {
+		panic(err)
+	}
+
+	a := NewAssembler()
+	ast.Inspect(t, a.ParseNode)
+	return a
+}
+
+func (a *Assembler) String() string {
+	return a.hhas
+}
+
 func (a *Assembler) emit(fstring string, args ...interface{}) (string) {
 	b := ""
+	str := fmt.Sprintf(fstring, args...)
 	if (a.trace_stack) {
-		op := strings.Fields(fstring)[0]
+		op := strings.Fields(str)[0]
 		x := LookupStackDelta(op)
 		if (x != 0) {
 			a.stack_count += x
@@ -44,18 +74,11 @@ func (a *Assembler) emit(fstring string, args ...interface{}) (string) {
 		}
 	}
 	ind := strings.Repeat("    ", a.indent)
-	str := fmt.Sprintf(fstring, args...)
 	return ind + str + b + "\n"
 }
 
 func (a *Assembler) emitLabel(l string) {
 	a.hhas += a.emit("%s:", l)
-}
-
-func (a *Assembler) emitMultiple(s []string) {
-	for _, n := range s {
-		a.hhas += a.emit(n)
-	}
 }
 
 func (a *Assembler) Print() {
@@ -112,27 +135,38 @@ func (a *Assembler) EmitCallArgs(n []ast.Expr) {
 			fmt.Printf("Unrecognized type: %s\n", v)
 		}
 	}
-	a.hhas += a.emit("FCall %d", len(n))
-	a.hhas += a.emit("PopC")
 }
 
 func (a *Assembler) EmitCallExpr(n *ast.CallExpr) {
-	fname := ""
-	emitter := php.SelectorFunc(nil)
-	switch n.Fun.(type) {
-	case *ast.SelectorExpr:
-		sel := n.Fun.(*ast.SelectorExpr)
-		emitter = php.TranslateSelector(sel.X.(*ast.Ident).Name, sel.Sel.Name)
-	case *ast.Ident:
-		fname = n.Fun.(*ast.Ident).Name
-		emitter = func(args []ast.Expr) []string {
-			return []string{fmt.Sprintf("FPushFuncD %d \"%s\"", len(args), fname)}
+	fname := n.Fun.(*ast.Ident).Name
+	printargs := func(args []ast.Expr) {
+		for _, arg := range args {
+			ast.Inspect(arg, a.ParseNode)
+			a.hhas += a.emit("Print")
+			a.hhas += a.emit("PopC")
 		}
 	}
 
-	lines := emitter(n.Args)
-	a.emitMultiple(lines)
-	a.EmitCallArgs(n.Args)
+	if (fname == "print" || fname == "println") {
+		printargs(n.Args)
+		if (fname == "println") {
+			a.hhas += a.emit("String \"\\n\"")
+			a.hhas += a.emit("Print")
+			a.hhas += a.emit("PopC")
+		}
+		return
+	} else {
+		a.hhas += a.emit("FPushFuncD %d \"%s\"", len(n.Args), fname)
+		a.EmitCallArgs(n.Args)
+	}
+	a.hhas += a.emit("FCall %d", len(n.Args))
+	if (a.need_unbox) {
+		a.hhas += a.emit("UnboxR")
+	} else {
+		a.hhas += a.emit("PopR")
+		a.need_unbox = true
+	}
+	a.hhas += "\n"
 }
 
 func (a *Assembler) EmitFile(n *ast.File) {
@@ -143,6 +177,7 @@ func (a *Assembler) EmitFile(n *ast.File) {
 	a.hhas += a.emit(".main {")
 	a.indent++
 	a.EmitCallExpr(main)
+	a.hhas += a.emit("Int 0")
 	a.hhas += a.emit("RetC")
 	a.indent--
 	a.hhas += a.emit("}\n")
@@ -256,12 +291,12 @@ func (a *Assembler) EmitReturnStmt(n *ast.ReturnStmt) {
 			x := v.X.(*ast.BasicLit)
 			y := v.Y.(*ast.BasicLit)
 			s := ""
-			s += a.emit(LookupOpFromKind(x.Kind)+"%s", x.Value)
-			s += a.emit(LookupOpFromKind(y.Kind)+"%s", y.Value)
+			s += a.emit(LookupOpFromKind(x.Kind)+" %s", x.Value)
+			s += a.emit(LookupOpFromKind(y.Kind)+" %s", y.Value)
 			s += a.emit(LookupOpFromKind(v.Op))
 			return s
 		case *ast.BasicLit:
-			return a.emit(LookupOpFromKind(v.Kind)+"%s", v.Value)
+			return a.emit(LookupOpFromKind(v.Kind)+" %s", v.Value)
 		case *ast.Ident:
 			return a.emit("CGetL $%s", v.Name)
 		default:
@@ -270,23 +305,13 @@ func (a *Assembler) EmitReturnStmt(n *ast.ReturnStmt) {
 	}
 
 	if (len(n.Results) == 0) {
+		a.hhas += a.emit("Null")
 		a.hhas += a.emit("RetC")
 		return
-	}
-	if (len(n.Results) == 1) {
+	} else {
 		a.hhas += getRetVal(n.Results[0])
+		a.hhas += a.emit("RetC")
 	}
-	if (len(n.Results) > 1) {
-		a.hhas += a.emit("NewArray")
-		//		for _, r := range n.Results {
-
-		//		}
-	}
-	a.hhas += a.emit("RetC")
-}
-
-func (a *Assembler) EmitSelectorExpr(n *ast.SelectorExpr) {
-	//fmt.Printf("%#v\n", n)
 }
 
 func (a *Assembler) ParseNode(n ast.Node) bool {
@@ -298,7 +323,6 @@ func (a *Assembler) ParseNode(n ast.Node) bool {
 		a.EmitAssignStmt(v)
 	case *ast.BinaryExpr:
 		a.EmitBinaryExpr(v)
-		return false
 	case *ast.BasicLit:
 		a.EmitBasicLit(v)
 	case *ast.BlockStmt:
@@ -325,18 +349,28 @@ func (a *Assembler) ParseNode(n ast.Node) bool {
 		a.EmitIfStmt(v)
 	case *ast.IncDecStmt:
 		a.EmitIncDecStmt(v)
-	case *ast.ImportSpec:
-		return false
 	case *ast.ParenExpr:
 		a.EmitParenExpr(v)
 	case *ast.ReturnStmt:
 		a.EmitReturnStmt(v)
 		return false
-	case *ast.SelectorExpr:
-		a.EmitSelectorExpr(v)
 	default:
 		// v is a ast.Node
 		fmt.Println("Not implemented:", reflect.TypeOf(v))
 	}
 	return true
+}
+
+func main() {
+	f := token.NewFileSet()
+	t, err := parser.ParseFile(f, "hello.go", hellogo, 0)
+
+	if (err != nil) {
+		panic(err)
+	}
+
+	a := NewAssembler()
+	ast.Inspect(t, a.ParseNode)
+	ast.Print(f, t)
+	a.Print()
 }
