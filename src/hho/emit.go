@@ -10,7 +10,11 @@ import (
 )
 
 func EmitIf(i *ssa.If) {
-	//fmt.Printf("\tJmpNZ %s (%s)\n", i.Block().Succs[0], i)
+	fmt.Printf("\t# %s\n", i)
+	ifTarget := fmt.Sprintf("%s.%s", i.Parent().Name(), i.Block().Succs[0]);
+	elseTarget := fmt.Sprintf("%s.%s", i.Parent().Name(), i.Block().Succs[1]);
+	fmt.Printf("\tJmpNZ %s\n", ifTarget)
+	fmt.Printf("\tJmp %s\n", elseTarget)
 }
 
 func EmitUnOp(o *ssa.UnOp) {
@@ -28,17 +32,24 @@ func EmitBinOp(o *ssa.BinOp) {
 	EmitValue(o.Y)
 
 	switch o.Op {
+	case token.ADD:
+		fmt.Printf("\tAdd\n")
 	case token.MUL:
 		fmt.Printf("\tMul\n")
 	case token.QUO:
 		fmt.Printf("\tDiv\n")
+	case token.LSS:
+		fmt.Printf("\tLe\n")
 	default:
 		fmt.Println("Unknown BinOp:", o.Op)
 	}
+
+	fmt.Printf("\tCSetL $%s\n", o.Name())
 }
 
 func EmitJump(j *ssa.Jump) {
-	fmt.Printf("\tJmp %s\n", j.Block().Succs[0])
+	target := fmt.Sprintf("%s.%s", j.Parent().Name(), (j.Block().Succs[0]).String())
+	fmt.Printf("\tJmp %s\n", target)
 }
 
 func EmitReturn(r *ssa.Return) {
@@ -55,6 +66,18 @@ func EmitFunctionCall(f *ssa.Function) {
 		fmt.Printf("\tFPass %d\n", i)
 	}
 	fmt.Printf("\tFCall %d\n", len(f.Params))
+}
+
+func EmitPhiAsValue(p *ssa.Phi) {
+	fmt.Printf("\tCGetL $%s\n", p.Name())
+}
+
+func EmitPhiAsInstruction(p *ssa.Phi) {
+	fmt.Printf("\t# %s\n", p)
+	for _, edge := range(p.Edges) {
+		EmitValue(edge)
+	}
+	fmt.Printf("\tSetL $%s\n", p.Name())
 }
 
 func EmitValue(v ssa.Value) {
@@ -81,10 +104,8 @@ func EmitValue(v ssa.Value) {
 		switch t.Object().Name() {
 		case "print":
 			// Pop the 1 pushed on by print.
-			//fmt.Printf("\tPrint\n\tPopC\n")
 			fmt.Printf("\tPrint\n")
 		case "println":
-			//fmt.Printf("\tPrint\n\tPopC\n\tString \"\\n\"\n\tPrint\n\tPopC\n")
 			fmt.Printf("\tPrint\n\tPopC\n\tString \"\\n\"\n\tPrint\n")
 		default:
 			fmt.Printf("Unknown Builtin: %v\n", t.Object().Name())
@@ -95,6 +116,10 @@ func EmitValue(v ssa.Value) {
 		fmt.Printf("\tCGetL $%s\n", t.Name())
 	case *ssa.Function:
 		EmitFunctionCall(t)
+	case *ssa.Phi:
+		EmitPhiAsValue(t)
+	case *ssa.BinOp:
+		fmt.Printf("\tCGetL $%s\n", t.Name())
 	default:
 		//fmt.Printf("%#v\n", t)
 		fmt.Printf("Unknown Value type: %s\n", reflect.TypeOf(t))
@@ -139,13 +164,15 @@ func EmitInstruction(i ssa.Instruction) {
 		EmitReturn(t)
 	case *ssa.Call:
 		EmitCall(t)
+	case *ssa.Phi:
+		EmitPhiAsInstruction(t)
 	default:
 		fmt.Println("Unknown Instruction:", reflect.TypeOf(t))
 	}
 }
 
 func EmitBasicBlock(b *ssa.BasicBlock) {
-	fmt.Printf("%s:\n", b.String())
+	fmt.Printf("%s.%s:\n", b.Parent().String(), b.String())
 	for _, instr := range(b.Instrs) {
 		EmitInstruction(instr)
 	}
