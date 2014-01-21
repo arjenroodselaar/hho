@@ -7,7 +7,13 @@ import (
 	"go/token"
 )
 
-const hellogo string = `package main; func x() string { return "howdy" }`
+const hellogo string = `
+package main
+
+func main() {
+	a := make([]string, 2)
+}
+`
 
 func main() {
 	f := token.NewFileSet()
