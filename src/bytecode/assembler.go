@@ -9,16 +9,6 @@ import (
 	"strings"
 )
 
-const hellogo string = `
-package main
-
-func main() {
-	z := "hi.txt"
-	x := file_get_contents(z)
-	print(file_get_contents(z))
-}
-`
-
 type Assembler struct {
 	hhas            string
 
@@ -107,7 +97,8 @@ func (a *Assembler) EmitAssignStmt(n *ast.AssignStmt) {
 }
 
 func (a *Assembler) EmitBasicLit(n *ast.BasicLit) {
-	a.hhas += a.emit(LookupOpFromKind(n.Kind)+" %s", n.Value)
+	op := LookupOpFromKind(n.Kind)
+	a.hhas += a.emit(op + " %s", n.Value)
 }
 
 func (a *Assembler) EmitBinaryExpr(n *ast.BinaryExpr) {
@@ -126,39 +117,49 @@ func (a *Assembler) EmitBlockStmt(n *ast.BlockStmt) {
 func (a *Assembler) EmitCallArgs(n []ast.Expr) {
 	for i, arg := range n {
 		switch v := arg.(type) {
-		case *ast.BasicLit:
-			a.hhas += a.emit("%s %s", LookupOpFromKind(v.Kind), v.Value)
-			a.hhas += a.emit("FPassC %d", i)
 		case *ast.Ident:
 			a.hhas += a.emit("FPassL %d $%s", i, v.Name)
+		case *ast.BasicLit:
+			op := LookupOpFromKind(v.Kind)
+			a.hhas += a.emit("%s %s", op, v.Value)
+			a.hhas += a.emit("FPassR %d", i)
+		case *ast.ArrayType:
+			println(fmt.Sprintf("%#v", v))
+			println(fmt.Sprintf("%#v", v.Elt))
+			a.hhas += a.emit("ARRAAYYYY")
 		default:
-			fmt.Printf("Unrecognized type: %s\n", v)
+			fmt.Printf("Unrecognized type: %#v\n", v)
 		}
+	}
+}
+
+func (a *Assembler) EmitMakeFunc(n *ast.CallExpr) {
+	// a := make([]string, 2)
+	t := n.Args[0]
+	v := n.Args[1].(*ast.BasicLit).Value
+
+	switch x := t.(type) {
+	case *ast.ArrayType:
+		arrtype := strings.Title(x.Elt.(*ast.Ident).Name)
+		fmt.Println(arrtype, v)
 	}
 }
 
 func (a *Assembler) EmitCallExpr(n *ast.CallExpr) {
 	fname := n.Fun.(*ast.Ident).Name
-	printargs := func(args []ast.Expr) {
-		for _, arg := range args {
-			ast.Inspect(arg, a.ParseNode)
-			a.hhas += a.emit("Print")
-			a.hhas += a.emit("PopC")
-		}
+
+	switch fname {
+	case "print": fallthrough
+	case "println":
+		a.EmitPrintFunc(fname, n.Args)
+		return
+	case "make":
+		a.EmitMakeFunc(n)
 	}
 
-	if (fname == "print" || fname == "println") {
-		printargs(n.Args)
-		if (fname == "println") {
-			a.hhas += a.emit("String \"\\n\"")
-			a.hhas += a.emit("Print")
-			a.hhas += a.emit("PopC")
-		}
-		return
-	} else {
-		a.hhas += a.emit("FPushFuncD %d \"%s\"", len(n.Args), fname)
-		a.EmitCallArgs(n.Args)
-	}
+	a.hhas += a.emit("FPushFuncD %d \"%s\"", len(n.Args), fname)
+	a.EmitCallArgs(n.Args)
+
 	a.hhas += a.emit("FCall %d", len(n.Args))
 	if (a.need_unbox) {
 		a.hhas += a.emit("UnboxR")
@@ -229,6 +230,12 @@ func (a *Assembler) EmitFuncDecl(n *ast.FuncDecl) {
 	a.hhas += a.emit("}\n")
 }
 
+func (a *Assembler) EmitGenDecl(n *ast.GenDecl) {
+	if n.Tok == token.VAR {
+		return // fuck var declarations! woo! *mic drop*
+	}
+}
+
 func (a *Assembler) EmitIdent(n *ast.Ident) {
 	if (a.in_assign) {
 		if (a.in_lhs) {
@@ -284,6 +291,26 @@ func (a *Assembler) getNextLabel() (lbl string) {
 	return
 }
 
+func (a *Assembler) EmitPrintFunc(fname string, n []ast.Expr) {
+	printargs := func(args []ast.Expr) {
+		for _, arg := range args {
+			ast.Inspect(arg, a.ParseNode)
+			a.hhas += a.emit("Print")
+			a.hhas += a.emit("PopC")
+		}
+	}
+
+	if (fname == "print" || fname == "println") {
+		printargs(n)
+		if (fname == "println") {
+			a.hhas += a.emit("String \"\\n\"")
+			a.hhas += a.emit("Print")
+			a.hhas += a.emit("PopC")
+		}
+		return
+	}
+}
+
 func (a *Assembler) EmitReturnStmt(n *ast.ReturnStmt) {
 	getRetVal := func(e ast.Expr) string {
 		switch v := e.(type) {
@@ -296,7 +323,8 @@ func (a *Assembler) EmitReturnStmt(n *ast.ReturnStmt) {
 			s += a.emit(LookupOpFromKind(v.Op))
 			return s
 		case *ast.BasicLit:
-			return a.emit(LookupOpFromKind(v.Kind)+" %s", v.Value)
+			op := LookupOpFromKind(v.Kind)
+			return a.emit(op + " %s", v.Value)
 		case *ast.Ident:
 			return a.emit("CGetL $%s", v.Name)
 		default:
@@ -330,6 +358,9 @@ func (a *Assembler) ParseNode(n ast.Node) bool {
 	case *ast.CallExpr:
 		a.EmitCallExpr(v)
 		return false
+	case *ast.DeclStmt:
+		a.ParseNode(v.Decl)
+		return false
 	case *ast.ExprStmt:
 		a.ParseNode(v.X)
 	case *ast.File:
@@ -339,6 +370,8 @@ func (a *Assembler) ParseNode(n ast.Node) bool {
 	case *ast.FuncDecl:
 		a.EmitFuncDecl(v)
 		return false
+	case *ast.GenDecl:
+		a.EmitGenDecl(v)
 	case *ast.Ident:
 		if (!a.skip_next_ident) {
 			a.EmitIdent(v)
@@ -359,18 +392,4 @@ func (a *Assembler) ParseNode(n ast.Node) bool {
 		fmt.Println("Not implemented:", reflect.TypeOf(v))
 	}
 	return true
-}
-
-func main() {
-	f := token.NewFileSet()
-	t, err := parser.ParseFile(f, "hello.go", hellogo, 0)
-
-	if (err != nil) {
-		panic(err)
-	}
-
-	a := NewAssembler()
-	ast.Inspect(t, a.ParseNode)
-	ast.Print(f, t)
-	a.Print()
 }
