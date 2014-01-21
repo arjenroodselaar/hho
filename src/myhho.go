@@ -11,10 +11,8 @@ const hellogo string = `
 package main
 
 func main() {
-	a := make([]string, 2)
-	append(a, "howdy")
-	append(a, "bass")
-	append(a, "man")
+	a := make(map[string]int, 2)
+	a["test"] = 4
 	var_dump(a)
 }
 `

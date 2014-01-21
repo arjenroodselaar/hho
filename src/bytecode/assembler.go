@@ -87,13 +87,38 @@ func buildArgList(n *ast.FuncDecl) string {
 	return s
 }
 
+/* TODO:
+
+Replace indexed assignments with a variable replacement
+so:
+
+	a[0], y := 4, 3
+	$z, $y := 4, 3 // $z is temporary
+	a[0] := $z
+	
+	turns into:
+	CGetL $a
+	Int  0
+	CGetL $z
+ */
+
+
+
 func (a *Assembler) EmitAssignStmt(n *ast.AssignStmt) {
 	a.in_assign = true
 	a.need_unbox = true
-	a.ParseNode(n.Rhs[0])
+
+	for i := len(n.Rhs)-1; i >= 0; i-- {
+		a.ParseNode(n.Rhs[i])
+	}
+
 	a.need_unbox = false
 	a.in_lhs = true
-	a.ParseNode(n.Lhs[0])
+
+	for i := 0; i < len(n.Lhs); i++ {
+		a.ParseNode(n.Lhs[0])
+	}
+
 	a.in_lhs = false
 	a.in_assign = false
 }
@@ -145,10 +170,8 @@ func (a *Assembler) EmitMakeFunc(n *ast.CallExpr) {
 		a.hhas += a.emit("NewCol %d %s", VECTOR_TYPE, v)
 	case *ast.MapType:
 		a.hhas += a.emit("NewCol %d %s", MAP_TYPE, v)
-		//arrtype := strings.Title(x.Elt.(*ast.Ident).Name)
-		//fmt.Println(arrtype, v)
 	case *ast.ChanType:
-		panic(fmt.Sprintf("You can't make type %T", t))
+		panic(fmt.Sprintf("You can't make type %T ...YET", t))
 	}
 }
 
@@ -292,6 +315,14 @@ func (a *Assembler) EmitIncDecStmt(n *ast.IncDecStmt) {
 	a.hhas += a.emit("PopC")
 }
 
+func (a *Assembler) EmitIndexExpr(n *ast.IndexExpr) {
+	oldassign := a.in_assign
+	a.in_assign = false
+	a.ParseNode(n.X)
+	a.ParseNode(n.Index)
+	a.in_assign = oldassign
+}
+
 func (a *Assembler) EmitParenExpr(n *ast.ParenExpr) {
 	a.ParseNode(n.X)
 }
@@ -393,6 +424,8 @@ func (a *Assembler) ParseNode(n ast.Node) bool {
 		a.EmitIfStmt(v)
 	case *ast.IncDecStmt:
 		a.EmitIncDecStmt(v)
+	case *ast.IndexExpr:
+		a.EmitIndexExpr(v)
 	case *ast.ParenExpr:
 		a.EmitParenExpr(v)
 	case *ast.ReturnStmt:
