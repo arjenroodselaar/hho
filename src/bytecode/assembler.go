@@ -89,7 +89,9 @@ func buildArgList(n *ast.FuncDecl) string {
 
 func (a *Assembler) EmitAssignStmt(n *ast.AssignStmt) {
 	a.in_assign = true
+	a.need_unbox = true
 	a.ParseNode(n.Rhs[0])
+	a.need_unbox = false
 	a.in_lhs = true
 	a.ParseNode(n.Lhs[0])
 	a.in_lhs = false
@@ -122,7 +124,7 @@ func (a *Assembler) EmitCallArgs(n []ast.Expr) {
 		case *ast.BasicLit:
 			op := LookupOpFromKind(v.Kind)
 			a.hhas += a.emit("%s %s", op, v.Value)
-			a.hhas += a.emit("FPassR %d", i)
+			a.hhas += a.emit("FPassC %d", i)
 		case *ast.ArrayType:
 			println(fmt.Sprintf("%#v", v))
 			println(fmt.Sprintf("%#v", v.Elt))
@@ -138,10 +140,15 @@ func (a *Assembler) EmitMakeFunc(n *ast.CallExpr) {
 	t := n.Args[0]
 	v := n.Args[1].(*ast.BasicLit).Value
 
-	switch x := t.(type) {
+	switch t.(type) {
 	case *ast.ArrayType:
-		arrtype := strings.Title(x.Elt.(*ast.Ident).Name)
-		fmt.Println(arrtype, v)
+		a.hhas += a.emit("NewCol %d %s", VECTOR_TYPE, v)
+	case *ast.MapType:
+		a.hhas += a.emit("NewCol %d %s", MAP_TYPE, v)
+		//arrtype := strings.Title(x.Elt.(*ast.Ident).Name)
+		//fmt.Println(arrtype, v)
+	case *ast.ChanType:
+		panic(fmt.Sprintf("You can't make type %T", t))
 	}
 }
 
@@ -151,10 +158,14 @@ func (a *Assembler) EmitCallExpr(n *ast.CallExpr) {
 	switch fname {
 	case "print": fallthrough
 	case "println":
+		a.need_unbox = true
 		a.EmitPrintFunc(fname, n.Args)
 		return
 	case "make":
 		a.EmitMakeFunc(n)
+		return
+	case "append":
+		fname = "array_push"
 	}
 
 	a.hhas += a.emit("FPushFuncD %d \"%s\"", len(n.Args), fname)
@@ -163,9 +174,9 @@ func (a *Assembler) EmitCallExpr(n *ast.CallExpr) {
 	a.hhas += a.emit("FCall %d", len(n.Args))
 	if (a.need_unbox) {
 		a.hhas += a.emit("UnboxR")
+		a.need_unbox = false
 	} else {
 		a.hhas += a.emit("PopR")
-		a.need_unbox = true
 	}
 	a.hhas += "\n"
 }

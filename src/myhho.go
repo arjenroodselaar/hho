@@ -12,6 +12,10 @@ package main
 
 func main() {
 	a := make([]string, 2)
+	append(a, "howdy")
+	append(a, "bass")
+	append(a, "man")
+	var_dump(a)
 }
 `
 
