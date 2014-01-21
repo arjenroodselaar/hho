@@ -1,9 +1,24 @@
 package bytecode
 
-import "go/token"
+import (
+	"go/token"
+	"fmt"
+)
+
+const (
+	INVALID_TYPE = iota
+	VECTOR_TYPE
+	MAP_TYPE
+	STABLEMAP_TYPE
+	SET_TYPE
+	PAIR_TYPE
+	FROZENVECTOR_TYPE
+	FROZENSET_TYPE
+	FRONZEMAP_TYPE
+)
 
 func LookupOpFromKind(t token.Token) string {
-	s := ""
+	var s string;
 	switch t {
 	case token.STRING:
 		s = "String"
@@ -48,7 +63,7 @@ func LookupOpFromKind(t token.Token) string {
 	case token.GEQ:      // >=
 		s = "Gte"
 	default:
-		panic("Token not supported")
+		panic(fmt.Sprintf("Type %T not supported", t))
 	}
 	return s
 }
