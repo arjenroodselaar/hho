@@ -1,15 +1,15 @@
 package main
 
 import (
-	//"os"
 	"go/parser"
-	//"go/ast"
 	"code.google.com/p/go.tools/importer"
 	"code.google.com/p/go.tools/ssa"
 	"hho"
+	"fmt"
+	"bytes"
 )
 func main() {
-	name := "/Users/arjen/dev/hho/examples/calc.go"
+	name := "/Users/arjen/dev/hho/examples/for.go"
 	imp := importer.New(&importer.Config{})
 
 	// Parse the input file.
@@ -25,10 +25,6 @@ func main() {
 	}
 	prog.BuildAll()
 
-	//pkg := prog.Package(info.Pkg)
-	//pkg.DumpTo(os.Stdout)
-
-
 	//prog.BuildAll()
 	//hho.EmitProgram(prog)
 
@@ -40,5 +36,14 @@ func main() {
 
 	//pkg.DumpTo(os.Stdout)
 
-	hho.EmitProgram(prog)
+	buf := new(bytes.Buffer)
+	translator := hho.NewTranslator(buf)
+	translator.EmitProgram(prog)
+
+	//pkg := prog.Package(info.Pkg)
+	//pkg.DumpTo(os.Stdout)
+	fmt.Println(buf.String())
+
+	//pkg.Func("init").DumpTo(os.Stdout)
+	//pkg.Func("main").DumpTo(os.Stdout)
 }

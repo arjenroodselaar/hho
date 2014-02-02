@@ -86,14 +86,16 @@ func EmitValue(v ssa.Value) {
 		switch c := t.Type().(type) {
 		case *types.Basic:
 			switch c.Kind() {
-			case types.String:
-				fmt.Printf("\tString %s\n", t.Value)
-			case types.Int:	fallthrough
-			case types.Int8: fallthrough
-			case types.Int16: fallthrough
-			case types.Int32: fallthrough
+			case types.Bool:
+				fmt.Printf("\tBool %s", t.Value)
+			case types.Int:		fallthrough
+			case types.Int8:	fallthrough
+			case types.Int16:	fallthrough
+			case types.Int32:	fallthrough
 			case types.Int64:
 				fmt.Printf("\tInt %s\n", t.Value)
+			case types.String:
+				fmt.Printf("\tString %s\n", t.Value)
 			default:
 				fmt.Println("Unknown Basic type:", c.Kind())
 			}
