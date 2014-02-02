@@ -9,7 +9,7 @@ import (
 	"bytes"
 )
 func main() {
-	name := "/Users/arjen/dev/hho/examples/for.go"
+	name := "/Users/arjen/dev/hho/examples/globals.go"
 	imp := importer.New(&importer.Config{})
 
 	// Parse the input file.

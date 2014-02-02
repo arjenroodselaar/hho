@@ -21,8 +21,12 @@ func (t *Translator) EmitLabel(label string) {
 	fmt.Fprintf(t.writer, "%s:\n", label)
 }
 
-func (t *Translator) EmitStatement(stmt string) {
-	fmt.Fprintf(t.writer, "\t%s\n", stmt)
+func (t *Translator) EmitStatement(args ...interface{}) {
+	sArgs := make([]string, len(args));
+	for _, arg := range(args) {
+		sArgs = append(sArgs, fmt.Sprintf("%s", arg))
+	}
+	fmt.Fprintln(t.writer, "\t" + strings.Join(sArgs, " "))
 }
 
 func (t *Translator) EmitReturn(i *ssa.Return) {
@@ -36,15 +40,15 @@ func (t *Translator) EmitReturn(i *ssa.Return) {
 func (t *Translator) EmitIf(i *ssa.If) {
 	t.EmitValue(i.Cond)
 	// Skip the next basic block if not True, continue otherwise.
-	t.EmitStatement(fmt.Sprintf("JmpNZ %s.%s", i.Parent().String(), i.Block().Succs[0]))
+	t.EmitStatement("JmpNZ", i.Block().Succs[0])
 }
 
 func (t *Translator) EmitJump(i *ssa.Jump) {
-	t.EmitStatement(fmt.Sprintf("Jmp %s.%s", i.Parent().String(), i.Block().Succs[0]))
+	t.EmitStatement("Jmp", i.Block().Succs[0])
 }
 
 func (t *Translator) EmitRegisterLoad(v ssa.Value) {
-	t.EmitStatement(fmt.Sprintf("CGetL $%s", v.Name()))
+	t.EmitStatement("CGetL", v.Name())
 }
 
 func (t *Translator) EmitUnOp(i *ssa.UnOp) {
@@ -63,7 +67,7 @@ func (t *Translator) EmitUnOp(i *ssa.UnOp) {
 		panic(fmt.Errorf("Unknown UnOp (%s)", i.Op))
 	}
 
-	t.EmitStatement(fmt.Sprintf("SetL $%s", i.Name()))
+	t.EmitStatement("SetL", i.Name())
 	t.EmitStatement("PopC")
 }
 
@@ -84,7 +88,7 @@ func (t *Translator) EmitBinOp(i *ssa.BinOp) {
 	default:
 		panic(fmt.Errorf("Unknown BinOp (%s)", i.Op))
 	}
-	t.EmitStatement(fmt.Sprintf("SetL $%s", i.Name()))
+	t.EmitStatement("SetL", i.Name())
 	t.EmitStatement("PopC")
 }
 
